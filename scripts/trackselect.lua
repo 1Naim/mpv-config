@@ -31,7 +31,7 @@ local defaults = {
         best = {},
         lang_score = nil,
         preferred = "eng",
-        excluded = "sign",
+        excluded = "sign/unlocalized",
         expected = "",
         id = ""
     }
