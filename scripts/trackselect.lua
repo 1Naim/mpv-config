@@ -31,7 +31,7 @@ local defaults = {
         best = {},
         lang_score = nil,
         preferred = "eng",
-        excluded = "sign/unlocalized",
+        excluded = "sign/unlocalized/doki",
         expected = "",
         id = ""
     }
