@@ -14,7 +14,7 @@ local defaults = {
         channels_score = -math.huge,
         preferred = "jpn/japanese",
         excluded = "",
-        expected = "",
+        expected = "2.0",
         id = ""
     },
     video = {
@@ -31,7 +31,7 @@ local defaults = {
         best = {},
         lang_score = nil,
         preferred = "eng",
-        excluded = "sign/doki",
+        excluded = "sign/doki/Surround",
         expected = "",
         id = ""
     }
