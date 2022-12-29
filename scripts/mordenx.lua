@@ -18,6 +18,7 @@ local utils = require 'mp.utils'
 local user_opts = {
     showwindowed = true,        -- show OSC when windowed?
     showfullscreen = true,      -- show OSC when fullscreen?
+    idlescreen = true,          -- draw logo and text when idle
     scalewindowed = 1.0,        -- scaling of the controller when windowed
     scalefullscreen = 1.0,      -- scaling of the controller when fullscreen
     scaleforcedwindow = 2.0,    -- scaling when rendered on a forced window
@@ -64,6 +65,20 @@ local jumpicons = {
     default = {'\xEF\x8E\xB2', '\xEF\x8E\xB2'}, -- second icon is mirrored in layout() 
 } 
 
+local icons = {
+  previous = '\xEF\x8E\xB5',
+  next = '\xEF\x8E\xB4',
+  play = '\xEF\x8E\xAA',
+  pause = '\xEF\x8E\xA7',
+  backward = '\xEF\x8E\xA0',
+  forward = '\xEF\x8E\x9F',
+  audio = '\xEF\x8E\xB7',
+  sub = '\xEF\x8F\x93',
+  minimize = '\xEF\x85\xAC',
+  fullscreen = '\xEF\x85\xAD',  
+  info = '',
+}
+
 -- Localization
 local language = {
 	['eng'] = {
@@ -95,6 +110,21 @@ local language = {
 		nolist = '无列表信息',
 		chapter = '章节',
 		nochapter = '无章节信息',
+	},
+	['pl'] = {
+	    welcome = '{\\fs24\\1c&H0&\\1c&HFFFFFF&}Upuść plik lub łącze URL do odtworzenia.',  -- this text appears when mpv starts
+		off = 'WYŁ.',
+		na = 'n/a',
+		none = 'nic',
+		video = 'Wideo',
+		audio = 'Ścieżka audio',
+		subtitle = 'Napisy',
+		available = 'Dostępne ',
+		track = ' Ścieżki:',
+		playlist = 'Lista odtwarzania',
+		nolist = 'Lista odtwarzania pusta.',
+		chapter = 'Rozdział',
+		nochapter = 'Brak rozdziałów.',
 	}
 }
 -- read options from config and command-line
@@ -159,6 +189,13 @@ local state = {
     fulltime = user_opts.timems,
     highlight_element = 'cy_audio',
     chapter_list = {},                      -- sorted by time
+}
+
+local thumbfast = {
+    width = 0,
+    height = 0,
+    disabled = true,
+    available = false
 }
 
 local window_control_box_width = 138
@@ -636,14 +673,16 @@ function render_elements(master_ass)
     -- then we use it instead of the normal title. we calculate it before the
     -- render iterations because the title may be rendered before the slider.
     state.forced_title = nil
-    local se, ae = state.slider_element, elements[state.active_element]
-    if user_opts.chapter_fmt ~= "no" and se and (ae == se or (not ae and mouse_hit(se))) then
-        local dur = mp.get_property_number("duration", 0)
-        if dur > 0 then
-            local possec = get_slider_value(se) * dur / 100 -- of mouse pos
-            local ch = get_chapter(possec)
-            if ch and ch.title and ch.title ~= "" then
-                state.forced_title = string.format(user_opts.chapter_fmt, ch.title)
+    if thumbfast.disabled then
+        local se, ae = state.slider_element, elements[state.active_element]
+        if user_opts.chapter_fmt ~= "no" and se and (ae == se or (not ae and mouse_hit(se))) then
+            local dur = mp.get_property_number("duration", 0)
+            if dur > 0 then
+                local possec = get_slider_value(se) * dur / 100 -- of mouse pos
+                local ch = get_chapter(possec)
+                if ch and ch.title and ch.title ~= "" then
+                    state.forced_title = string.format(user_opts.chapter_fmt, ch.title)
+                end
             end
         end
     end
@@ -754,6 +793,60 @@ function render_elements(master_ass)
                     elem_ass:append(slider_lo.tooltip_style)
                     ass_append_alpha(elem_ass, slider_lo.alpha, 0)
                     elem_ass:append(tooltiplabel)
+                    
+                    -- thumbnail
+                    if not thumbfast.disabled then
+                        local osd_w = mp.get_property_number("osd-width")
+                        if osd_w then
+                            local r_w, r_h = get_virt_scale_factor()
+
+                            local tooltip_font_size = 18
+                            local thumbPad = 4
+                            local thumbMarginX = 18 / r_w
+                            local thumbMarginY = tooltip_font_size + thumbPad + 2 / r_h
+                            local tooltipBgColor = "FFFFFF"
+                            local tooltipBgAlpha = 80
+                            local thumbX = math.min(osd_w - thumbfast.width - thumbMarginX, math.max(thumbMarginX, tx / r_w - thumbfast.width / 2))
+                            local thumbY = (ty - thumbMarginY) / r_h - thumbfast.height
+
+                            thumbX = math.floor(thumbX + 0.5)
+                            thumbY = math.floor(thumbY + 0.5)
+
+                            elem_ass:new_event()
+                            elem_ass:pos(thumbX * r_w, ty - thumbMarginY - thumbfast.height * r_h)
+                            elem_ass:append(osc_styles.Tooltip)
+                            elem_ass:draw_start()
+                            elem_ass:rect_cw(-thumbPad * r_w, -thumbPad * r_h, (thumbfast.width + thumbPad) * r_w, (thumbfast.height + thumbPad) * r_h)
+                            elem_ass:draw_stop()
+
+                            mp.commandv("script-message-to", "thumbfast", "thumb",
+                                mp.get_property_number("duration", 0) * (sliderpos / 100),
+                                thumbX,
+                                thumbY
+                            )
+
+                            local se, ae = state.slider_element, elements[state.active_element]
+                            if user_opts.chapter_fmt ~= "no" and se and (ae == se or (not ae and mouse_hit(se))) then
+                                local dur = mp.get_property_number("duration", 0)
+                                if dur > 0 then
+                                    local possec = get_slider_value(se) * dur / 100 -- of mouse pos
+                                    local ch = get_chapter(possec)
+                                    if ch and ch.title and ch.title ~= "" then
+                                        elem_ass:new_event()
+                                        elem_ass:pos((thumbX + thumbfast.width / 2) * r_w, thumbY * r_h - tooltip_font_size)
+                                        elem_ass:an(an)
+                                        elem_ass:append(slider_lo.tooltip_style)
+                                        ass_append_alpha(elem_ass, slider_lo.alpha, 0)
+                                        elem_ass:append(string.format(user_opts.chapter_fmt, ch.title))
+                                    end
+                                end
+                            end
+                        end
+                    end
+                else
+                    if thumbfast.available then
+                        mp.commandv("script-message-to", "thumbfast", "clear")
+                    end
                 end
             end
 
@@ -1284,7 +1377,7 @@ function osc_init()
     -- prev
     ne = new_element('pl_prev', 'button')
 
-    ne.content = '\xEF\x8E\xB5'
+    ne.content = icons.previous
     ne.enabled = (pl_pos > 1) or (loop ~= 'no')
     ne.eventresponder['mbtn_left_up'] =
         function ()
@@ -1296,7 +1389,7 @@ function osc_init()
     --next
     ne = new_element('pl_next', 'button')
 
-    ne.content = '\xEF\x8E\xB4'
+    ne.content = icons.next
     ne.enabled = (have_pl and (pl_pos < pl_count)) or (loop ~= 'no')
     ne.eventresponder['mbtn_left_up'] =
         function ()
@@ -1312,9 +1405,9 @@ function osc_init()
 
     ne.content = function ()
         if mp.get_property('pause') == 'yes' then
-            return ('\xEF\x8E\xAA')
+            return (icons.play)
         else
-            return ('\xEF\x8E\xA7')
+            return (icons.pause)
         end
     end
     ne.eventresponder['mbtn_left_up'] =
@@ -1371,7 +1464,7 @@ function osc_init()
     ne = new_element('skipback', 'button')
 
     ne.softrepeat = true
-    ne.content = '\xEF\x8E\xA0'
+    ne.content = icons.backward
     ne.enabled = (have_ch) -- disables button when no chapters available.
     ne.eventresponder['mbtn_left_down'] =
         --function () mp.command('seek -5') end
@@ -1392,7 +1485,7 @@ function osc_init()
     ne = new_element('skipfrwd', 'button')
 
     ne.softrepeat = true
-    ne.content = '\xEF\x8E\x9F'
+    ne.content = icons.forward
     ne.enabled = (have_ch) -- disables button when no chapters available.
     ne.eventresponder['mbtn_left_down'] =
         --function () mp.command('seek +5') end
@@ -1417,7 +1510,7 @@ function osc_init()
     ne.enabled = (#tracks_osc.audio > 0)
     ne.off = (get_track('audio') == 0)
     ne.visible = (osc_param.playresx >= 540)
-    ne.content = '\xEF\x8E\xB7'
+    ne.content = icons.audio
     ne.tooltip_style = osc_styles.Tooltip
     ne.tooltipF = function ()
 		local msg = texts.off
@@ -1450,7 +1543,7 @@ function osc_init()
     ne.enabled = (#tracks_osc.sub > 0)
     ne.off = (get_track('sub') == 0)
     ne.visible = (osc_param.playresx >= 600)
-    ne.content = '\xEF\x8F\x93'
+    ne.content = icons.sub
     ne.tooltip_style = osc_styles.Tooltip
     ne.tooltipF = function ()
 		local msg = texts.off
@@ -1482,9 +1575,9 @@ function osc_init()
     ne = new_element('tog_fs', 'button')
     ne.content = function ()
         if (state.fullscreen) then
-            return ('\xEF\x85\xAC')
+            return (icons.minimize)
         else
-            return ('\xEF\x85\xAD')
+            return (icons.fullscreen)
         end
     end
     ne.visible = (osc_param.playresx >= 540)
@@ -1493,7 +1586,7 @@ function osc_init()
 
     --tog_info
     ne = new_element('tog_info', 'button')
-    ne.content = ''
+    ne.content = icons.info
     ne.visible = (osc_param.playresx >= 600)
     ne.eventresponder['mbtn_left_up'] =
         function () mp.commandv('script-binding', 'stats/display-stats-toggle') end
@@ -2075,9 +2168,11 @@ function tick()
     if (not state.enabled) then return end
 
     if (state.idle) then
-		show_logo()
-        -- render idle message
-        msg.trace('idle message')
+        if user_opts.idlescreen then
+	   show_logo()
+	   -- render idle message
+           msg.trace('idle message')
+        end
 
         if state.showhide_enabled then
             mp.disable_key_bindings('showhide')
@@ -2520,6 +2615,15 @@ end
 visibility_mode(user_opts.visibility, true)
 mp.register_script_message('osc-visibility', visibility_mode)
 mp.add_key_binding(nil, 'visibility', function() visibility_mode('cycle') end)
+
+mp.register_script_message("thumbfast-info", function(json)
+    local data = utils.parse_json(json)
+    if type(data) ~= "table" or not data.width or not data.height then
+        msg.error("thumbfast-info: received json didn't produce a table with thumbnail information")
+    else
+        thumbfast = data
+    end
+end)
 
 set_virt_mouse_area(0, 0, 0, 0, 'input')
 set_virt_mouse_area(0, 0, 0, 0, 'window-controls')
